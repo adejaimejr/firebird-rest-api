@@ -1,0 +1,137 @@
+version: '3.8'
+
+services:
+  firebird-gateway:
+    image: firebird-api-gateway:latest
+
+    # Build da imagem (use 'docker build' antes do deploy)
+    build:
+      context: .
+      dockerfile: Dockerfile
+
+    # NOTA: env_file não funciona no Swarm mode
+    # As variáveis são exportadas pelo deploy.sh antes do stack deploy
+
+    # Configurações de deploy para Docker Swarm
+    deploy:
+      mode: replicated
+      replicas: 2
+
+      # Constraints - onde deployar
+      placement:
+        constraints:
+          - node.role == manager  # Ou worker, conforme sua necessidade
+
+      # Política de restart
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+
+      # Recursos (opcional, mas recomendado)
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2048M
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+
+      # Update config - zero downtime deployment
+      update_config:
+        parallelism: 1
+        delay: 10s
+        order: start-first
+        failure_action: rollback
+
+      # Labels do Traefik para SSL automático
+      # NOTA: ${DOMAIN} vem do arquivo .env (ex: api.seudominio.com.br)
+      labels:
+        # Habilita o Traefik para este serviço
+        - "traefik.enable=true"
+
+        # Define a network do Traefik
+        - "traefik.docker.network=network_public"
+
+        # HTTP Router - Usa variável ${DOMAIN} do .env
+        - "traefik.http.routers.firebird-gateway.rule=Host(`${DOMAIN}`)"
+        - "traefik.http.routers.firebird-gateway.entrypoints=websecure"
+        - "traefik.http.routers.firebird-gateway.tls=true"
+        - "traefik.http.routers.firebird-gateway.tls.certresolver=letsencrypt"
+
+        # Service (necessário em Swarm mode)
+        - "traefik.http.services.firebird-gateway.loadbalancer.server.port=3030"
+
+        # Health check do loadbalancer
+        - "traefik.http.services.firebird-gateway.loadbalancer.healthcheck.path=/health"
+        - "traefik.http.services.firebird-gateway.loadbalancer.healthcheck.interval=30s"
+        - "traefik.http.services.firebird-gateway.loadbalancer.healthcheck.timeout=5s"
+
+        # Redirect HTTP para HTTPS (opcional)
+        - "traefik.http.routers.firebird-gateway-http.rule=Host(`${DOMAIN}`)"
+        - "traefik.http.routers.firebird-gateway-http.entrypoints=web"
+        - "traefik.http.routers.firebird-gateway-http.middlewares=redirect-to-https"
+        - "traefik.http.middlewares.redirect-to-https.redirectscheme.scheme=https"
+        - "traefik.http.middlewares.redirect-to-https.redirectscheme.permanent=true"
+
+    # Variáveis de ambiente - TODAS vêm do arquivo .env
+    environment:
+      # Node
+      - NODE_ENV=${NODE_ENV:-production}
+
+      # API
+      - PORT=${PORT:-3030}
+
+      # Firebird Connection - OBRIGATÓRIAS (definir no .env)
+      - FB_HOST=${FB_HOST}
+      - FB_PORT=${FB_PORT:-3050}
+      - FB_DATABASE=${FB_DATABASE}
+      - FB_USER=${FB_USER}
+      - FB_PASSWORD=${FB_PASSWORD}
+
+      # Pool de Conexões
+      - POOL_MIN=${POOL_MIN:-2}
+      - POOL_MAX=${POOL_MAX:-10}
+      - POOL_IDLE_TIMEOUT=${POOL_IDLE_TIMEOUT:-30000}
+      - POOL_CHECK_INTERVAL=${POOL_CHECK_INTERVAL:-5000}
+
+      # Segurança - API_KEY OBRIGATÓRIA (definir no .env)
+      - API_KEY=${API_KEY}
+      - BLOCK_DDL=${BLOCK_DDL:-true}
+      - ALLOW_WRITE_OPS=${ALLOW_WRITE_OPS:-false}
+
+      # Rate Limiting
+      - RATE_LIMIT_WINDOW=${RATE_LIMIT_WINDOW:-60000}
+      - RATE_LIMIT_MAX=${RATE_LIMIT_MAX:-100}
+
+    # Secrets (alternativa mais segura que environment variables)
+    # Descomente para usar Docker Secrets
+    # secrets:
+    #   - api_key
+    #   - fb_password
+
+    # Networks
+    networks:
+      - network_public  # Rede do Traefik
+
+    # Health check do container
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3030/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+
+# Networks externas
+networks:
+  network_public:
+    external: true
+
+# Secrets (opcional, mas recomendado para produção)
+# Descomente e configure conforme necessário
+# secrets:
+#   api_key:
+#     external: true
+#   fb_password:
+#     external: true
