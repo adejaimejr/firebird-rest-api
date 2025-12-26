@@ -180,6 +180,8 @@ curl https://sua-api.com/health
 
 ## 🎓 Queries Comuns para ERP Millennium
 
+> 📚 **[Guia Completo de Queries Firebird](FIREBIRD_QUERY_GUIDE.md)** - Documentação detalhada sobre Dialect 1, datas, booleanos e troubleshooting
+
 ### Consultar Produto por Código
 
 ```json
@@ -387,6 +389,8 @@ firebird-api/
 ├── build.sh               # Script de build automático
 ├── deploy.sh              # Script de deploy automático
 ├── test.sh                # Suite de testes
+├── FIREBIRD_QUERY_GUIDE.md # 📚 Guia completo de queries Dialect 1
+├── QUICK_START.md         # Guia rápido de deploy
 ├── claude.md              # Documentação técnica interna
 └── README.md              # Esta documentação
 ```
